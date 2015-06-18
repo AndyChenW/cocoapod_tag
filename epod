@@ -1,0 +1,78 @@
+#!/usr/bin/env python
+import os
+import re
+from docopt import docopt
+
+
+"""epod.
+
+Usage:
+  epod elm_upgrade [--patch | --minor | --major]
+  epod elm_tag
+
+Options:
+  -h --help     Show this screen.
+  --version     Show version.
+
+"""
+
+VERSION_LINE_RE = re.compile(r'[ ]*s.version[ ]*=[ ]*\"[\d]+.[\d]+.[\d]+\"\n')
+
+
+def get_pod_file():
+    for _file in os.listdir("./"):
+        if _file.endswith(".podspec"):
+            return _file
+
+
+def take_once(matcher, replacer, candidates, failed_description):
+    result = [] + candidates
+    for i, candidate in enumerate(candidates):
+        matched = matcher(candidate)
+        if matched:
+            result[i] = replacer(matched.group())
+            return result
+
+    if result == candidates:
+        raise Exception(failed_description)
+
+
+def replace_file(file_path, matcher, replacer, failed_description):
+    with open(file_path) as infile:
+        lines = take_once(
+            matcher, replacer, infile.readlines(), failed_description)
+        with open(file_path, 'w') as outfile:
+            outfile.writelines(lines)
+
+
+def get_replacer(change_type):
+    def upgrader(version_line):
+        version = version_line.split('=')[1].strip()[1:-1]
+        versions = version.split('.')
+        versions[change_type] = str(int(versions[change_type]) + 1)
+        if change_type != 2:
+            versions[2] = '0'
+        if change_type == 0:
+            versions[1] = '0'
+        new_version = '.'.join(versions)
+        return version_line.replace(version, new_version)
+    return upgrader
+
+
+def get_matcher():
+    return lambda line: VERSION_LINE_RE.match(line)
+
+
+def change_pod_version(change_type):
+    failed_description = ('''no version spec s.version = x.x.x found''',
+                          '''in your .podspec file''')
+    replace_file(
+        get_pod_file(),
+        get_matcher(),
+        get_replacer(change_type),
+        failed_description)
+
+
+if __name__ == "__main__":
+    arguments = docopt(__doc__, version='epod 0.1')
+    print(arguments)
